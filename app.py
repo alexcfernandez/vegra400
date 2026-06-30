@@ -35,7 +35,8 @@ UPLOAD = CSS + """
 <div class="box">
   <form method="post" action="/process" enctype="multipart/form-data">
     <p><b>1) Puja el plano</b> (PDF o DXF):</p>
-    <input type="file" name="plano" accept=".pdf,.dxf">
+    <input type="file" name="plano" accept=".pdf,.dxf" multiple>
+    <p class="muted" style="margin:6px 0 0">Pots seleccionar diversos PDFs alhora (planta, retorn, axonometries...).</p>
     <p style="margin-top:14px"><button class="btn" type="submit">Processar plano &rarr;</button></p>
   </form>
 </div>
@@ -81,53 +82,58 @@ def home():
 
 @app.route("/process", methods=["POST"])
 def process():
-    cotas = ""; err = ""; csv_text = SCAFFOLD
+    cotas_set = set(); err = ""; csv_text = SCAFFOLD; imgs = []; analysis = {}; cotas = ""
     try:
-        f = request.files.get("plano")
-        if not f or not f.filename:
+        files = [f for f in request.files.getlist("plano") if f and f.filename]
+        if not files:
             err = "No has seleccionat cap fitxer."
         else:
-            name = secure_filename(f.filename); path = os.path.join(UP, name); f.save(path)
-            if name.lower().endswith(".pdf"):
-                try:
-                    info = extract.extract_cotas(path)
-                    cotas = ", ".join(str(c) for c in info["cotas"] if c >= 100)
-                    imgs = _pdf_to_pngs(path)            # visio: pagines del plano
+            for f in files:
+                name = secure_filename(f.filename); path = os.path.join(UP, name); f.save(path)
+                low = name.lower()
+                if low.endswith(".pdf"):
                     try:
-                        csv_text = ai_assist.build_pieces({"cotas": info["cotas"]}, images=imgs)
+                        info = extract.extract_cotas(path)
+                        cotas_set.update(c for c in info["cotas"] if c >= 50)
                     except Exception:
-                        csv_text = extract.candidate_csv(info["cotas"])
-                except Exception as e:
-                    err = "No s'han pogut llegir les cotes del PDF (%s). Pots completar la llista a ma." % type(e).__name__
-            elif name.lower().endswith(".dxf"):
-                try:
-                    a = read_dxf.analyze(path)
-                    cotas = ", ".join(str(c) for c in a["cotas"])
-                    img = os.path.join(UP, "ducts.png")
+                        pass
                     try:
-                        read_dxf.render_ducts_png(path, img)        # visio: render de conductes
-                        imgs = [img] if os.path.exists(img) else None
+                        imgs += _pdf_to_pngs(path, name)
                     except Exception:
-                        imgs = None
+                        pass
+                elif low.endswith(".dxf"):
                     try:
-                        csv_text = ai_assist.build_pieces(a, images=imgs)
+                        a = read_dxf.analyze(path)
+                        cotas_set.update(a.get("cotas", []))
+                        analysis["cond_layers"] = a.get("cond_layers", {})
+                        analysis["duct_len_m"] = a.get("duct_len_m", {})
+                        img = os.path.join(UP, name + ".png")
+                        read_dxf.render_ducts_png(path, img)
+                        if os.path.exists(img):
+                            imgs.append(img)
                     except Exception:
-                        csv_text = read_dxf.review_csv(a)
-                except Exception as e:
-                    err = "No s'ha pogut llegir el DXF (%s). Pot ser massa pesat per al servidor; completa la llista a ma o amplia la memoria a Railway." % type(e).__name__
-            else:
-                err = "Format no suportat. Puja un PDF o un DXF."
+                        pass
+                else:
+                    err = "Format no suportat (puja PDF o DXF)."
+            imgs = imgs[:8]
+            analysis["cotas"] = sorted(cotas_set)
+            cotas = ", ".join(str(c) for c in analysis["cotas"]) + ("  ·  %d imatges del plano" % len(imgs) if imgs else "")
+            try:
+                csv_text = ai_assist.build_pieces(analysis, images=imgs)
+            except Exception:
+                csv_text = SCAFFOLD
     except Exception:
-        err = "Hi ha hagut un error processant el fitxer."
+        err = "Hi ha hagut un error processant els fitxers."
     return render_template_string(REVIEW, cotas=cotas, csv=csv_text, err=err, project="", client="")
 
-def _pdf_to_pngs(path, max_pages=3):
-    import fitz
+def _pdf_to_pngs(path, tag="p", max_pages=4):
+    import fitz, re
+    safe = re.sub(r"[^a-zA-Z0-9]", "", tag)[:20] or "p"
     out = []
     doc = fitz.open(path)
     for i in range(min(max_pages, doc.page_count)):
-        png = os.path.join(UP, "page%d.png" % i)
-        doc[i].get_pixmap(dpi=130).save(png)
+        png = os.path.join(UP, "img_%s_%d.png" % (safe, i))
+        doc[i].get_pixmap(dpi=170).save(png)
         out.append(png)
     return out
 
