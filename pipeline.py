@@ -63,6 +63,14 @@ def to_pieces(groups):
         for (codi, descr, w1, h1, w2, h2, uts, unit, _preu, peces) in items:
             n += 1
             q_real = peces if (peces and peces > 0) else None   # x1/x2 de Joan, si lo puso
+            # si una pieza geométrica viene SIN sección (la IA no la pudo leer / no estaba
+            # acotada), sale como ESPECIAL '(secció a confirmar)' en vez de dibujar un 0x0 roto.
+            if codi in ("rec", "red", "c90", "c45", "inj", "tapa") and (w1 <= 0 or h1 <= 0):
+                pcs.append(despiece.Pieza(f"P{n}", "especial", w1, h1, w2=w2, h2=h2,
+                                          ext_a="M20", ext_b="M20", gauge=0.8,
+                                          qty=(q_real or max(1, int(round(uts)))),
+                                          descr="(secció a confirmar) " + descr))
+                continue
             if codi == "rec":
                 # conducto recto: 'uts' son METROS -> se trocea en tramos de 1500
                 Lmm = max(1, int(round(uts * 1000)))
