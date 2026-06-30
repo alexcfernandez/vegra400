@@ -17,6 +17,9 @@ SYSTEM = (
  "- En troncs que es redueixen (con), reparteix l'alcada en trams de 1500 mm interpolant.\n"
  "- Unions M20 per defecte; tapes als finals de ramal. preu nomes per a especials/ma d'obra.\n"
  "- Si NO estas segur d'una mesura, fes la millor estimacio pero NO inventis seccions que no es dedueixin del plano.\n"
+ "- FORMAT ESTRICTE: cada fila SEMPRE amb 9 punts i coma (10 camps). Si no hi ha reduccio, deixa w2 i h2 BUITS pero mante els ';'.\n"
+ "  Exemple recte:    COND IMP;rec;Conducte 800x500;800;500;;;15;m;\n"
+ "  Exemple reduccio: COND IMP;red;Reduccio 800x500 a 700x450;800;500;700;450;1;ut;\n"
  "- Respon NOMES amb les linies CSV, sense cap explicacio."
 )
 
