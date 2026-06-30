@@ -108,6 +108,8 @@ def process():
                         cotas_set.update(a.get("cotas", []))
                         analysis["cond_layers"] = a.get("cond_layers", {})
                         analysis["duct_len_m"] = a.get("duct_len_m", {})
+                        analysis["cotas_by_system"] = a.get("cotas_by_system", {})
+                        analysis["n_trams_1500"] = a.get("n_trams_1500")
                         img = os.path.join(UP, name + ".png")
                         read_dxf.render_ducts_png(path, img)
                         if os.path.exists(img):
