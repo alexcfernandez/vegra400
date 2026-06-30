@@ -44,10 +44,18 @@ def build_pieces(a, images=None, model=None, timeout=180):
     model = model or os.environ.get("AI_MODEL", "claude-opus-4-8")
     cotas = ", ".join(str(c) for c in a.get("cotas", []))
     capas = "; ".join("%s (%s el.)" % (k, v) for k, v in a.get("cond_layers", {}).items()) or "(no detectades)"
-    metres = "; ".join("%s = %s m" % (k, v) for k, v in a.get("duct_len_m", {}).items()) or "(no mesurats)"
-    txt = ("Dades llegides del plano:\n- Capes de conductes: %s\n- Metres per capa: %s\n"
-           "- Cotes detectades per OCR (poden tenir errors; PRIORITZA el que llegeixis a la imatge): %s\n\n"
-           % (capas, metres, cotas))
+    metres = "; ".join("%s = %s" % (k, v) for k, v in a.get("duct_len_m", {}).items()) or "(no mesurats)"
+    by_sys = a.get("cotas_by_system") or {}
+    dxf_block = ""
+    if by_sys:
+        linies = "\n".join("    %s: %s" % (s, ", ".join(str(c) for c in cs)) for s, cs in by_sys.items())
+        dxf_block = ("- COTES REALS del DXF per sistema (FIABLES: son objectes DIMENSION del plano, no OCR):\n"
+                     "%s\n  (Aquestes son les bones. Fes-les servir per a les seccions.)\n" % linies)
+    txt = ("Dades llegides del plano:\n- Capes de conductes: %s\n"
+           "- Longitud de linies per sistema (indicador aproximat, NO metres reals): %s\n"
+           "%s"
+           "- Cotes detectades per OCR (poden tenir errors; prioritza el DXF i la imatge): %s\n\n"
+           % (capas, metres, dxf_block, cotas))
     if images:
         txt += ("Tens la/les pagina(es) i els seus quadrants ampliats. Recorre el pla accessori per "
                 "accessori. ")
