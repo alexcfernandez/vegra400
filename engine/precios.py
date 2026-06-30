@@ -131,7 +131,7 @@ def _materials_sheet(wb, m, S):
     row(3, "PARÀMETRES (editables)", "", "", bold=True)
     row(4, "Merma de xapa", 0.12, "%", "retalls", inp=True, fmt="0%")
     row(5, "Pes xapa 0,8 mm", 6.4, "kg/m²", "galvanitzat", inp=True, fmt="0.0")
-    row(6, "Abraçadera cada", 1.5, "m", "suportació", inp=True, fmt="0.0")
+    row(6, "Suport/abraçadera cada", 3, "m", "cada 3 m", inp=True, fmt="0.0")
     row(7, "Cargol cada", 200, "mm de brida", "metu", inp=True, fmt="0")
     row(9, "QUANTITATS (del despiece)", "", "", bold=True)
     row(10, "Superfície xapa neta", m["area_neta_m2"], "m²", inp=False, fmt="0.0")
@@ -145,8 +145,9 @@ def _materials_sheet(wb, m, S):
     ms["B17"] = "=B16*B5"; ms["B17"].number_format = "#,##0"; ms["C17"] = "kg"
     ms["A18"] = "Abraçaderes"; ms["A18"].font = Font(name=AR, bold=True, size=10)
     ms["B18"] = "=CEILING(B11/B6,1)"; ms["B18"].number_format = "0"; ms["C18"] = "ut"
-    ms["A19"] = "Unions metu (juntes)"; ms["A19"].font = Font(name=AR, bold=True, size=10)
-    ms["B19"] = m["peces"]; ms["B19"].number_format = "0"; ms["C19"] = "ut"
+    ms["A19"] = "Metu (perfil)"; ms["A19"].font = Font(name=AR, bold=True, size=10)
+    ms["B19"] = "=B13/1000"; ms["B19"].number_format = "0.0"; ms["C19"] = "m lineals"
+    ms["D19"] = "segons secció de cada unió"; ms["D19"].font = Font(name=AR, italic=True, size=8, color="888888")
     ms["A20"] = "Cargols (aprox.)"; ms["A20"].font = Font(name=AR, bold=True, size=10)
     ms["B20"] = "=CEILING(B13/B7,1)"; ms["B20"].number_format = "#,##0"; ms["C20"] = "ut"
     ms["A22"] = "Estimacions a partir del despiece i ratis editables. Les peces especials (pantaló, plenum…) porten el seu material a part."
