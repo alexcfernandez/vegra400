@@ -116,7 +116,7 @@ def process():
                         pass
                 else:
                     err = "Format no suportat (puja PDF o DXF)."
-            imgs = imgs[:8]
+            imgs = imgs[:10]
             analysis["cotas"] = sorted(cotas_set)
             cotas = ", ".join(str(c) for c in analysis["cotas"]) + ("  ·  %d imatges del plano" % len(imgs) if imgs else "")
             try:
@@ -128,14 +128,31 @@ def process():
     return render_template_string(REVIEW, cotas=cotas, csv=csv_text, err=err, project="", client="")
 
 def _pdf_to_pngs(path, tag="p", max_pages=4):
+    """Render de cada pàgina: la pàgina sencera (per la topologia) MÉS 4 quadrants a
+       més resolució (per llegir les cotes petites en vermell). Així la IA pot
+       enganxar les cotes ESCRITES a cada accessori en comptes de perdre-les en
+       l'escalat d'una pàgina sencera reduïda."""
     import fitz, re
+    from PIL import Image
     safe = re.sub(r"[^a-zA-Z0-9]", "", tag)[:20] or "p"
     out = []
     doc = fitz.open(path)
     for i in range(min(max_pages, doc.page_count)):
-        png = os.path.join(UP, "img_%s_%d.png" % (safe, i))
-        doc[i].get_pixmap(dpi=170).save(png)
-        out.append(png)
+        page = doc[i]
+        pf = os.path.join(UP, "img_%s_%d.png" % (safe, i))
+        page.get_pixmap(dpi=150).save(pf); out.append(pf)
+        try:
+            pix = page.get_pixmap(dpi=300)
+            im = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            W, H = pix.width, pix.height
+            ox, oy = int(W * 0.06), int(H * 0.06)
+            quads = [(0, 0, W//2+ox, H//2+oy), (W//2-ox, 0, W, H//2+oy),
+                     (0, H//2-oy, W//2+ox, H), (W//2-ox, H//2-oy, W, H)]
+            for q, (x0, y0, x1, y1) in enumerate(quads):
+                tf = os.path.join(UP, "img_%s_%d_q%d.png" % (safe, i, q))
+                im.crop((x0, y0, x1, y1)).save(tf); out.append(tf)
+        except Exception:
+            pass
     return out
 
 @app.route("/review", methods=["POST"])
