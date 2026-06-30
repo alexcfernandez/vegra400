@@ -42,7 +42,7 @@ def to_pieces(groups):
                 pcs.append(despiece.Pieza(f"P{n}", "tapa", w1, h1, qty=max(1, int(round(uts)))))
     return pcs
 
-def generate_all(csv_text, outdir):
+def generate_all(csv_text, outdir, project=None, client=None):
     os.makedirs(outdir, exist_ok=True)
     groups, labor = parse_csv(csv_text)
     out = {}
@@ -51,6 +51,6 @@ def generate_all(csv_text, outdir):
     pcs = to_pieces(groups)
     if pcs:
         out["dxf"] = despiece.build_cnc_dxf(pcs, os.path.join(outdir, "despiece_corte.dxf"))
-        out["parte"] = despiece.build_shop_pdf(pcs, os.path.join(outdir, "parte_taller.pdf"))
+        out["parte"] = despiece.build_shop_pdf(pcs, os.path.join(outdir, "parte_taller.pdf"), project=project, client=client)
         out["despiece_csv"] = despiece.parts_csv(pcs, os.path.join(outdir, "despiece.csv"))
     return out
