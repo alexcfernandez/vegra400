@@ -19,7 +19,7 @@ def _styles():
         box=Border(*[Side(style="thin", color="BBBBBB")] * 4),
         blue=Font(name=AR, color="0000FF", size=10), blk=Font(name=AR, color="000000", size=10))
 
-def build_budget(groups, labor, out_path, base=21.28, tapa=10.64, malla=63.83, iva=0.21):
+def build_budget(groups, labor, out_path, base=21.28, tapa=10.64, malla=63.83, iva=0.21, materials=None):
     """groups: list of (titulo, [ (codi,descr,w1,h1,w2,h2,uts,unit,preu_manual|None) ])
        labor:  list of (descr, importe)"""
     S = _styles()
@@ -111,5 +111,46 @@ def build_budget(groups, labor, out_path, base=21.28, tapa=10.64, malla=63.83, i
     for j, wd in enumerate([42, 7, 7, 7, 7, 7, 10, 8, 8, 12, 13], 1):
         p.column_dimensions[p.cell(1, j).column_letter].width = wd
     p.freeze_panes = "A5"
+    if materials:
+        _materials_sheet(wb, materials, S)
     wb.save(out_path)
     return out_path
+
+def _materials_sheet(wb, m, S):
+    ms = wb.create_sheet("Materials")
+    ms["A1"] = "MATERIALS I ACCESSORIS (estimat del despiece)"
+    ms["A1"].font = Font(name=AR, bold=True, size=12)
+    def row(r, a, b, c="", note="", inp=False, fmt=None, bold=False):
+        ms[f"A{r}"] = a; ms[f"A{r}"].font = Font(name=AR, bold=bold, size=10)
+        cell = ms[f"B{r}"]; cell.value = b
+        cell.font = S["blue"] if inp else S["blk"]
+        if inp: cell.fill = S["inp"]
+        if fmt: cell.number_format = fmt
+        ms[f"C{r}"] = c; ms[f"C{r}"].font = Font(name=AR, size=9, color="666666")
+        if note: ms[f"D{r}"] = note; ms[f"D{r}"].font = Font(name=AR, italic=True, size=8, color="888888")
+    row(3, "PARÀMETRES (editables)", "", "", bold=True)
+    row(4, "Merma de xapa", 0.12, "%", "retalls", inp=True, fmt="0%")
+    row(5, "Pes xapa 0,8 mm", 6.4, "kg/m²", "galvanitzat", inp=True, fmt="0.0")
+    row(6, "Abraçadera cada", 1.5, "m", "suportació", inp=True, fmt="0.0")
+    row(7, "Cargol cada", 200, "mm de brida", "metu", inp=True, fmt="0")
+    row(9, "QUANTITATS (del despiece)", "", "", bold=True)
+    row(10, "Superfície xapa neta", m["area_neta_m2"], "m²", inp=False, fmt="0.0")
+    row(11, "Metres de conducte", m["metres"], "m", fmt="0.0")
+    row(12, "Nº de peces (trams/accessoris)", m["peces"], "ut", fmt="0")
+    row(13, "Perímetre total de brides", m["brides_mm"], "mm", fmt="#,##0")
+    row(15, "RESULTATS", "", "", bold=True)
+    ms["A16"] = "Superfície amb merma"; ms["A16"].font = Font(name=AR, bold=True, size=10)
+    ms["B16"] = "=B10*(1+B4)"; ms["B16"].number_format = "0.0"; ms["C16"] = "m²"
+    ms["A17"] = "Pes de xapa"; ms["A17"].font = Font(name=AR, bold=True, size=10)
+    ms["B17"] = "=B16*B5"; ms["B17"].number_format = "#,##0"; ms["C17"] = "kg"
+    ms["A18"] = "Abraçaderes"; ms["A18"].font = Font(name=AR, bold=True, size=10)
+    ms["B18"] = "=CEILING(B11/B6,1)"; ms["B18"].number_format = "0"; ms["C18"] = "ut"
+    ms["A19"] = "Unions metu (juntes)"; ms["A19"].font = Font(name=AR, bold=True, size=10)
+    ms["B19"] = m["peces"]; ms["B19"].number_format = "0"; ms["C19"] = "ut"
+    ms["A20"] = "Cargols (aprox.)"; ms["A20"].font = Font(name=AR, bold=True, size=10)
+    ms["B20"] = "=CEILING(B13/B7,1)"; ms["B20"].number_format = "#,##0"; ms["C20"] = "ut"
+    ms["A22"] = "Estimacions a partir del despiece i ratis editables. Les peces especials (pantaló, plenum…) porten el seu material a part."
+    ms["A22"].font = Font(name=AR, italic=True, size=8, color="888888")
+    for col, w in (("A", 30), ("B", 12), ("C", 14), ("D", 16)):
+        ms.column_dimensions[col].width = w
+    return ms
