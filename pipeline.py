@@ -13,17 +13,36 @@ def _num(x, default=0):
 
 def parse_csv(text):
     groups = OrderedDict(); labor = []
+    UNITS = ("m", "ut", "ml", "u", "m.", "ut.")
     for ln in text.splitlines():
         s = ln.strip()
         if not s or s.startswith("#"): continue
         parts = [c.strip() for c in s.split(";")]
         if parts[0].lower() == "grup": continue            # cabecera
-        parts += [""] * (len(COLS) - len(parts))
-        grup, codi, descr, w1, h1, w2, h2, uts, unit, preu = parts[:10]
+        if len(parts) < 4: continue
+        grup, codi, descr = parts[0], parts[1], parts[2]
+        rest = parts[3:]
+        # localizar la unidad (m/ut) para anclar columnas aunque la IA se salte camps buits
+        unit_idx = None
+        for i, p in enumerate(rest):
+            if p.strip().lower() in UNITS:
+                unit_idx = i; break
+        if unit_idx is not None and unit_idx >= 1:
+            unit = rest[unit_idx].strip().lower().rstrip(".")
+            uts = _num(rest[unit_idx - 1])
+            dims = rest[:unit_idx - 1]
+            preu = rest[unit_idx + 1] if len(rest) > unit_idx + 1 else ""
+        else:                                              # sin unidad: posicional clásico
+            rest += [""] * (7 - len(rest))
+            dims = rest[:4]; uts = _num(rest[4]); unit = rest[5] or "ut"; preu = rest[6]
+        w1 = int(_num(dims[0])) if len(dims) > 0 else 0
+        h1 = int(_num(dims[1])) if len(dims) > 1 else 0
+        w2 = int(_num(dims[2])) if len(dims) > 2 and dims[2] != "" else w1
+        h2 = int(_num(dims[3])) if len(dims) > 3 and dims[3] != "" else h1
         if codi == "treb":
             labor.append((descr, _num(preu))); continue
-        item = (codi, descr, int(_num(w1)), int(_num(h1)), int(_num(w2)), int(_num(h2)),
-                _num(uts), unit or "ut", (_num(preu) if preu.strip() else None))
+        item = (codi, descr, w1, h1, w2, h2, uts, unit or "ut",
+                (_num(preu) if str(preu).strip() else None))
         groups.setdefault(grup, []).append(item)
     return list(groups.items()), labor
 
