@@ -70,3 +70,40 @@ def review_csv(a):
         "# Cotes (mm): %s" % cotas,
         "# (els noms de capa canvien segons el projecte; el muntatge automatic seccio+llargada es el modul seguent)",
     ])
+
+
+def render_ducts_png(path, out_png, max_lines=8000):
+    """Dibuixa NOMES les linies de les capes de conductes a una imatge PNG.
+    Lectura en streaming (baixa memoria) per aguantar fitxers grans."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    segs = []
+    cur_type = None; cur_layer = "0"; x0 = y0 = x1 = y1 = None
+    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+        for code, val in _pairs(fh):
+            if code == "0":
+                if cur_type == "LINE" and None not in (x0, y0, x1, y1) and COND_RX.search(cur_layer or ""):
+                    segs.append(((x0, x1), (y0, y1)))
+                    if len(segs) >= max_lines:
+                        break
+                cur_type = val; cur_layer = "0"; x0 = y0 = x1 = y1 = None
+            elif code == "8":
+                cur_layer = val
+            elif cur_type == "LINE":
+                try:
+                    if code == "10": x0 = float(val)
+                    elif code == "20": y0 = float(val)
+                    elif code == "11": x1 = float(val)
+                    elif code == "21": y1 = float(val)
+                except Exception:
+                    pass
+    if not segs:
+        return None
+    fig, ax = plt.subplots(figsize=(11, 8))
+    for xs, ys in segs:
+        ax.plot(xs, ys, color="black", linewidth=0.6)
+    ax.set_aspect("equal"); ax.axis("off")
+    fig.savefig(out_png, dpi=130, bbox_inches="tight", pad_inches=0.1)
+    plt.close(fig)
+    return out_png
