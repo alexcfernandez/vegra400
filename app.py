@@ -53,6 +53,8 @@ REVIEW = CSS + """
 <span class="muted">El muntatge automatic de la llista de peces des del plano esta en construccio; de moment revisa/completa la llista abans de generar.</span></div>{% endif %}
 <p class="muted">Format: <code>grup;codi;descr;w1;h1;w2;h2;uts;unit;preu</code> &middot; codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp &middot; treb=ma d'obra &middot; preu nomes per a peces especials i ma d'obra.</p>
 <form method="post" action="/generate">
+  <p><b>Obra/Projecte:</b> <input type="text" name="project" value="{{project|default('')}}" placeholder="ex: EMBOTITS COLLELL - ASSECADOR" style="width:48%">
+  &nbsp;<b>Client:</b> <input type="text" name="client" value="{{client|default('')}}" placeholder="ex: FRITECNO / Sr. ..." style="width:30%"></p>
   <textarea name="csv">{{csv}}</textarea>
   <p style="margin-top:12px"><button class="btn" type="submit">Generar pressupost + materials + planos + DXF &rarr;</button></p>
 </form>
@@ -90,24 +92,44 @@ def process():
                 try:
                     info = extract.extract_cotas(path)
                     cotas = ", ".join(str(c) for c in info["cotas"] if c >= 100)
-                    csv_text = extract.candidate_csv(info["cotas"])
+                    imgs = _pdf_to_pngs(path)            # visio: pagines del plano
+                    try:
+                        csv_text = ai_assist.build_pieces({"cotas": info["cotas"]}, images=imgs)
+                    except Exception:
+                        csv_text = extract.candidate_csv(info["cotas"])
                 except Exception as e:
                     err = "No s'han pogut llegir les cotes del PDF (%s). Pots completar la llista a ma." % type(e).__name__
             elif name.lower().endswith(".dxf"):
                 try:
                     a = read_dxf.analyze(path)
                     cotas = ", ".join(str(c) for c in a["cotas"])
+                    img = os.path.join(UP, "ducts.png")
                     try:
-                        csv_text = ai_assist.build_pieces(a)      # la IA munta la llista
+                        read_dxf.render_ducts_png(path, img)        # visio: render de conductes
+                        imgs = [img] if os.path.exists(img) else None
                     except Exception:
-                        csv_text = read_dxf.review_csv(a)         # sense IA: scaffold per completar
+                        imgs = None
+                    try:
+                        csv_text = ai_assist.build_pieces(a, images=imgs)
+                    except Exception:
+                        csv_text = read_dxf.review_csv(a)
                 except Exception as e:
                     err = "No s'ha pogut llegir el DXF (%s). Pot ser massa pesat per al servidor; completa la llista a ma o amplia la memoria a Railway." % type(e).__name__
             else:
                 err = "Format no suportat. Puja un PDF o un DXF."
     except Exception:
         err = "Hi ha hagut un error processant el fitxer."
-    return render_template_string(REVIEW, cotas=cotas, csv=csv_text, err=err)
+    return render_template_string(REVIEW, cotas=cotas, csv=csv_text, err=err, project="", client="")
+
+def _pdf_to_pngs(path, max_pages=3):
+    import fitz
+    out = []
+    doc = fitz.open(path)
+    for i in range(min(max_pages, doc.page_count)):
+        png = os.path.join(UP, "page%d.png" % i)
+        doc[i].get_pixmap(dpi=130).save(png)
+        out.append(png)
+    return out
 
 @app.route("/review", methods=["POST"])
 def review():
@@ -115,13 +137,15 @@ def review():
         csv_text = open(SAMPLE, encoding="utf-8").read()
     except Exception:
         csv_text = SCAFFOLD
-    return render_template_string(REVIEW, cotas="", csv=csv_text, err="")
+    return render_template_string(REVIEW, cotas="", csv=csv_text, err="", project="", client="")
 
 @app.route("/generate", methods=["POST"])
 def generate():
     try:
         csv_text = request.form.get("csv", "")
-        out = pipeline.generate_all(csv_text, GEN)
+        project = request.form.get("project", "").strip() or None
+        client = request.form.get("client", "").strip() or None
+        out = pipeline.generate_all(csv_text, GEN, project=project, client=client)
         return render_template_string(RESULT, parte=("parte" in out), dxf=("dxf" in out), csvf=("despiece_csv" in out))
     except Exception:
         return render_template_string(ERRPAGE, err="No s'ha pogut generar. Revisa que la llista tingui el format correcte (columnes separades per ;).")
