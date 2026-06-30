@@ -26,6 +26,12 @@ METU_DEDUCT = 0
 PAO_MARGIN  = 0
 TAPA_PEST   = 25
 
+# --- CURVAS / INJERTS (parámetros AJUSTABLES - pendientes de validar con Joan) ---
+CURVA_THROAT_FACTOR = 0.5   # radio de garganta interior = factor * (dim. en el plano de giro)
+                            #   0.5 -> radio centro = 1x el ancho (radio "largo"). Ajustable.
+CURVA_SEAM   = SEAM         # costura añadida a las tiras de garganta/talón
+INJERT_COLLAR = 250         # mm de largo por defecto del collar de un injert (stub)
+
 PROYECTO = "(projecte)"
 CLIENTE  = "(client)"
 FECHA    = datetime.date.today().strftime("%d/%m/%Y")
@@ -34,13 +40,14 @@ FECHA    = datetime.date.today().strftime("%d/%m/%Y")
 class Pieza:
     def __init__(self, ref, tipo, w, h, L=None, w2=None, h2=None,
                  ext_a="M20", ext_b="M20", gauge=0.8, qty=1,
-                 material="Xapa simple galva"):
+                 material="Xapa simple galva", angle=90):
         self.ref, self.tipo = ref, tipo
         self.w, self.h, self.L = w, h, L
         self.w2 = w2 if w2 is not None else w     # sección de salida (cono)
         self.h2 = h2 if h2 is not None else h
         self.ext_a, self.ext_b = ext_a, ext_b
         self.gauge, self.qty, self.material = gauge, qty, material
+        self.angle = angle                        # grados (curva)
 
     @property
     def descr(self):
@@ -49,6 +56,10 @@ class Pieza:
         if self.tipo == "cono":
             return (f"Reducció {self.w}x{self.h} a {self.w2}x{self.h2} - "
                     f"{self.L}L {self.ext_a}/{self.ext_b}")
+        if self.tipo == "curva":
+            return f"Curva {self.angle}° {self.w}x{self.h} {self.ext_a}/{self.ext_b}"
+        if self.tipo == "injert":
+            return f"Injert (collar) {self.w}x{self.h} - {self.L}L {self.ext_a}"
         return f"{self.tipo.capitalize()} {self.w}x{self.h} - {self.L}L {self.ext_a}/{self.ext_b}"
 
 # ----------------------- LÓGICA DE FABRICACIÓN -----------------------
@@ -112,10 +123,38 @@ def desarrollo_tapa(p):
     return [dict(tipo="tapa", w=p.w, h=p.h, bw=bw, bh=bh, pest=TAPA_PEST,
                  ref=p.ref, etiqueta=p.descr, gauge=p.gauge, a=p.ext_a, b="-")]
 
+def _curva_geom(p):
+    """Geometría de un codo rectangular WxH que gira p.angle grados.
+       Gira en el plano de W (ancho). Mejillas = sectores de corona; garganta/talón = tiras."""
+    W, H = p.w, p.h
+    theta = math.radians(p.angle)
+    ri = max(1.0, CURVA_THROAT_FACTOR * W)   # radio garganta (interior)
+    ro = ri + W                              # radio talón (exterior)
+    arc_in = ri * theta                      # largo desarrollado tira garganta
+    arc_out = ro * theta                     # largo desarrollado tira talón
+    depth = H + N_COSTURES * CURVA_SEAM      # ancho tira (con costura)
+    return dict(W=W, H=H, ang=p.angle, theta=theta, ri=ri, ro=ro,
+                arc_in=round(arc_in), arc_out=round(arc_out), depth=round(depth))
+
+def desarrollo_curva(p):
+    g = _curva_geom(p)
+    g.update(tipo="curva", ref=p.ref, etiqueta=p.descr, gauge=p.gauge,
+             a=p.ext_a, b=p.ext_b, w=p.w, h=p.h, length=g["ro"], seg_nominal=g["ro"])
+    return [g]
+
+def _annular_pts(cx, cy, ri, ro, theta, n=28):
+    pts = []
+    for i in range(n + 1):
+        a = theta * i / n; pts.append((cx + ri*math.cos(a), cy + ri*math.sin(a)))
+    for i in range(n + 1):
+        a = theta * (n - i) / n; pts.append((cx + ro*math.cos(a), cy + ro*math.sin(a)))
+    return pts
+
 def desarrollar(p):
-    if p.tipo == "tapa": return desarrollo_tapa(p)
-    if p.tipo == "cono": return desarrollo_cono(p)
-    return desarrollo_cuerpo(p)
+    if p.tipo == "tapa":  return desarrollo_tapa(p)
+    if p.tipo == "cono":  return desarrollo_cono(p)
+    if p.tipo == "curva": return desarrollo_curva(p)
+    return desarrollo_cuerpo(p)   # conducte recto e injert (collar)
 
 # fold lines (posiciones de pliegue) de un cono en un extremo dado
 def _cono_fold_positions(w, h):
@@ -147,6 +186,8 @@ def export_dxf(piezas, path):
                 elif blank["tipo"] == "cono":
                     _draw_cono(msp, x0, y0, blank)
                     used_w, used_h = max(blank["ga"], blank["gb"]), blank["length"]
+                elif blank["tipo"] == "curva":
+                    used_w, used_h = _draw_curva(msp, x0, y0, blank)
                 else:
                     _draw_recto(msp, x0, y0, blank)
                     used_w, used_h = blank["girth"], blank["length"]
@@ -185,6 +226,37 @@ def _draw_cono(msp, x, y, b):
     # marcas pittsburgh: bolsa (vertical, x=35) y pestaña (inclinada, girth-10)
     msp.add_line((x+PITTS_BOLSA, y), (x+PITTS_BOLSA, y+L), dxfattribs={"layer":"COTA_INFO"})
     msp.add_line((x+ga-PITTS_PEST, y), (x+gb-PITTS_PEST, y+L), dxfattribs={"layer":"COTA_INFO"})
+
+def _draw_curva(msp, x, y, b):
+    """Tila las 4 piezas del codo en el DXF: 2 mejillas (sector de corona) + garganta + talón.
+       Devuelve (ancho_usado, alto_usado)."""
+    gap = 40.0
+    ri, ro, th = b["ri"], b["ro"], b["theta"]
+    depth, arc_in, arc_out = b["depth"], b["arc_in"], b["arc_out"]
+    cx = x; cy = y
+    # 2 mejillas (idénticas), una al lado de otra
+    cheek_w = ro
+    for k in range(2):
+        ox = x + k * (cheek_w + gap)
+        pts = _annular_pts(ox, y, ri, ro, th)
+        msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": "CORTE"})
+        # radios extremos (líneas de cierre = bordes de unión con garganta/talón)
+        msp.add_line((ox + ri, y), (ox + ro, y), dxfattribs={"layer": "COTA_INFO"})
+        msp.add_line((ox + ri*math.cos(th), y + ri*math.sin(th)),
+                     (ox + ro*math.cos(th), y + ro*math.sin(th)), dxfattribs={"layer": "COTA_INFO"})
+    xstrip = x + 2 * (cheek_w + gap)
+    # garganta (interior): rectángulo depth x arc_in
+    msp.add_lwpolyline([(xstrip, y), (xstrip + arc_in, y),
+                        (xstrip + arc_in, y + depth), (xstrip, y + depth)],
+                       close=True, dxfattribs={"layer": "CORTE"})
+    # talón (exterior): rectángulo depth x arc_out
+    xstrip2 = xstrip + arc_in + gap
+    msp.add_lwpolyline([(xstrip2, y), (xstrip2 + arc_out, y),
+                        (xstrip2 + arc_out, y + depth), (xstrip2, y + depth)],
+                       close=True, dxfattribs={"layer": "CORTE"})
+    used_w = (xstrip2 + arc_out) - x
+    used_h = max(ro, depth)
+    return used_w, used_h
 
 def _draw_tapa(msp, x, y, b):
     bw, bh, pe = b["bw"], b["bh"], b["pest"]
@@ -254,6 +326,8 @@ def export_pdf(piezas, path):
                     axi.text(-8,p.h/2,f"H={p.h}",ha="right",va="center",rotation=90,fontsize=7.5)
                     axi.set_xlim(-60,p.w+60); axi.set_ylim(-60,p.h+60)
                     axi.set_aspect("equal"); axi.axis("off")
+                elif blank["tipo"] == "curva":
+                    _iso_curva(axi, blank)
                 elif blank["tipo"] == "cono":
                     _iso_cono(axi, blank["wa"], blank["ha"], blank["wb"], blank["hb"],
                               blank["seg_nominal"], blank["a"], blank["b"])
@@ -266,7 +340,50 @@ def export_pdf(piezas, path):
                 _cajetin(fig, p, blank)
                 pdf.savefig(fig); plt.close(fig)
 
+def _iso_curva(ax, b):
+    """Perfil del codo (vista de mejilla): sector de corona ri..ro, ángulo theta."""
+    ri, ro, th = b["ri"], b["ro"], b["theta"]
+    pts = _annular_pts(0, 0, ri, ro, th)
+    ax.add_patch(plt.Polygon(pts, fill=False, lw=1.3))
+    # radios extremos
+    ax.plot([ri, ro], [0, 0], color="#1a1a1a", lw=1.1)
+    ax.plot([ri*math.cos(th), ro*math.cos(th)], [ri*math.sin(th), ro*math.sin(th)],
+            color="#1a1a1a", lw=1.1)
+    ax.text(ro*0.5, -ro*0.08, f"W={b['W']}", ha="center", fontsize=8)
+    ax.text(ro*1.02, ro*0.12, f"talón r={int(b['ro'])}", ha="left", fontsize=7, color="#a33")
+    ax.text(ri*0.7, ri*0.5, f"garganta\nr={int(b['ri'])}", ha="center", fontsize=7, color="#36c")
+    ax.text(-ro*0.05, ro*0.55, f"{b['ang']}°", ha="right", fontsize=9, color="#1F3864")
+    ax.text(ro*0.5, ro*0.75, f"profunditat H={b['H']}", ha="center", fontsize=7.5, color="#555")
+    ax.set_aspect("equal"); ax.axis("off")
+
 def _draw_dev(ax, b, p):
+    if b["tipo"] == "curva":
+        # 4 piezas apiladas: mejilla x2, garganta, talón
+        ri, ro, th = b["ri"], b["ro"], b["theta"]
+        depth, arc_in, arc_out = b["depth"], b["arc_in"], b["arc_out"]
+        # --- mejilla (sector de corona) arriba ---
+        pts = _annular_pts(0, 0, ri, ro, th)
+        ax.add_patch(plt.Polygon(pts, fill=False, lw=1.2, ec="#1a1a1a"))
+        ax.text(ro*0.45, ro*0.45, "MEJILLA  x2", ha="center", fontsize=7.5, color="#1a1a1a")
+        ax.text(ro*1.05, 0, f"r ext={int(ro)}", ha="left", va="center", fontsize=6.5, color="#a33")
+        ax.text(ri*0.95, ri*0.1, f"r int={int(ri)}", ha="right", va="bottom", fontsize=6.5, color="#36c")
+        # --- garganta y talón debajo, como rectángulos ---
+        y0 = -depth - 120
+        ax.add_patch(plt.Rectangle((0, y0), arc_in, depth, fill=False, lw=1.2))
+        ax.add_patch(plt.Rectangle((0, y0), CURVA_SEAM, depth, facecolor="#f3d9d9", ec="none"))
+        _dim_h(ax, 0, arc_in, y0 - 30, f"garganta L={arc_in}")
+        _dim_v(ax, y0, y0+depth, -25, f"{depth}")
+        y1 = y0 - depth - 110
+        ax.add_patch(plt.Rectangle((0, y1), arc_out, depth, fill=False, lw=1.2))
+        ax.add_patch(plt.Rectangle((0, y1), CURVA_SEAM, depth, facecolor="#f3d9d9", ec="none"))
+        _dim_h(ax, 0, arc_out, y1 - 30, f"talón L={arc_out}")
+        _dim_v(ax, y1, y1+depth, -25, f"{depth}")
+        ax.text(arc_out*0.5, y1 - 75, "(profunditat = H + costura)", ha="center",
+                fontsize=6.5, color="#888")
+        ax.set_xlim(-90, max(ro, arc_out) + 60)
+        ax.set_ylim(y1 - 110, ro + 40)
+        ax.set_aspect("equal"); ax.axis("off")
+        return
     if b["tipo"] == "tapa":
         bw,bh,pe = b["bw"],b["bh"],b["pest"]
         ax.add_patch(plt.Rectangle((0,0),bw,bh,fill=False,lw=1.3))
@@ -323,6 +440,8 @@ def _cajetin(fig, p, b):
     ax.add_patch(plt.Rectangle((0,0),1,1,fill=False,lw=1,transform=ax.transAxes))
     if p.tipo == "cono":
         seccion = f"{p.w}x{p.h} → {p.w2}x{p.h2} mm"
+    elif p.tipo == "curva":
+        seccion = f"{p.w} x {p.h} mm · gir {p.angle}°"
     else:
         seccion = f"{p.w} x {p.h} mm"
     rows = [
@@ -350,6 +469,9 @@ def export_csv_y_tabla(piezas, path):
                 desarrollo=f"{b['bw']} x {b['bh']} (pest {b['pest']})"
             elif b["tipo"]=="cono":
                 desarrollo=f"trapecio {b['ga']}→{b['gb']} x {b['length']}"
+            elif b["tipo"]=="curva":
+                desarrollo=(f"2 mejillas r{int(b['ri'])}-{int(b['ro'])} ang {b['ang']}° · "
+                            f"garganta {b['arc_in']}x{b['depth']} · talón {b['arc_out']}x{b['depth']}")
             else:
                 desarrollo=f"{b['girth']} x {b['length']}"
             filas.append([p.ref, b["etiqueta"], p.qty, p.gauge,
