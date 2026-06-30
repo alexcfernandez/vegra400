@@ -19,10 +19,12 @@ SYSTEM = (
  "FASE 2 - LLISTA CSV amb capcalera: grup;codi;descr;w1;h1;w2;h2;uts;unit;preu;peces\n"
  "\n"
  "REGLES D'OR:\n"
- "- NO INVENTIS cap mesura. Una cota nomes hi va si esta ESCRITA al pla.\n"
- "- Si una seccio NO esta acotada, deixa w1;h1;w2;h2 BUITS i posa al descr '(seccio a confirmar)'.\n"
- "  El tecnic ho omplira; val mes buit i honest que un numero inventat.\n"
- "- Si DEDUEIXES alguna cosa (no esta escrita pero es evident), marca-ho amb '(suposat)' al descr.\n"
+ "- NO INVENTIS de cap manera. Pero SI tens dades reals, FES-LES SERVIR: combina els TRAMS MESURATS\n"
+ "  (ample x llarg) amb les COTES del sistema per omplir les seccions dels conductes rectes i reduccions.\n"
+ "  Exemple: si a RET hi ha trams de 800 d'ample i a les cotes hi ha 150 -> conducte 800x150.\n"
+ "- Nomes deixa w1;h1;w2;h2 BUITS i '(seccio a confirmar)' quan NO tinguis ni mesura ni cota per deduir-la\n"
+ "  (tipicament els fittings rars: pantaló, plenum, connexio, canvi de sentit, difusors).\n"
+ "- Si DEDUEIXES alguna cosa raonable, marca-ho amb '(suposat)' al descr; aixi el tecnic ho revisa.\n"
  "- codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp. pantaló/plenum/colector/connexio/canvi sentit = esp.\n"
  "- uts = el que factura VEGRA (metres si unit='m', quantitat si 'ut'). peces = peces fisiques reals (x1/x2; buit=1).\n"
  "- Cada reduccio es UNA peca de 1500 mm; NO multipliquis el llarg.\n"
@@ -46,11 +48,18 @@ def build_pieces(a, images=None, model=None, timeout=180):
     capas = "; ".join("%s (%s el.)" % (k, v) for k, v in a.get("cond_layers", {}).items()) or "(no detectades)"
     metres = "; ".join("%s = %s" % (k, v) for k, v in a.get("duct_len_m", {}).items()) or "(no mesurats)"
     by_sys = a.get("cotas_by_system") or {}
+    runs = a.get("runs_by_system") or {}
     dxf_block = ""
     if by_sys:
         linies = "\n".join("    %s: %s" % (s, ", ".join(str(c) for c in cs)) for s, cs in by_sys.items())
-        dxf_block = ("- COTES REALS del DXF per sistema (FIABLES: son objectes DIMENSION del plano, no OCR):\n"
-                     "%s\n  (Aquestes son les bones. Fes-les servir per a les seccions.)\n" % linies)
+        dxf_block += ("- COTES REALS del DXF per sistema (FIABLES: objectes DIMENSION del plano):\n%s\n" % linies)
+    if runs:
+        rl = "\n".join("    %s: %s" % (s, "; ".join("%dx%d" % (w, l) for w, l in rr[:14]))
+                       for s, rr in runs.items())
+        dxf_block += ("- TRAMS MESURATS de la geometria del DXF (ample x llarg, en mm, vista en planta):\n%s\n"
+                      "  L'AMPLE esta mesurat de veritat. L'altura de la seccio sol estar a la llista de cotes.\n"
+                      "  USA aquests amples i llargs per als conductes rectes: son mesures reals, NO els marquis\n"
+                      "  '(a confirmar)'. Combina l'ample mesurat amb l'altura mes plausible de les cotes.\n" % rl)
     txt = ("Dades llegides del plano:\n- Capes de conductes: %s\n"
            "- Longitud de linies per sistema (indicador aproximat, NO metres reals): %s\n"
            "%s"
