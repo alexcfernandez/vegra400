@@ -32,6 +32,10 @@ CURVA_THROAT_FACTOR = 0.5   # radio de garganta interior = factor * (dim. en el 
 CURVA_SEAM   = SEAM         # costura añadida a las tiras de garganta/talón
 INJERT_COLLAR = 250         # mm de largo por defecto del collar de un injert (stub)
 
+# Largo de una reducció/cono cuando la lista NO trae longitud (pieza suelta "ut"):
+CONO_TAPER  = 2.0           # largo ≈ TAPER * mayor cambio de dimensión (pendiente ~1:4 por lado)
+CONO_MIN_LEN = 300          # mm, largo mínimo de una transición
+
 PROYECTO = "(projecte)"
 CLIENTE  = "(client)"
 FECHA    = datetime.date.today().strftime("%d/%m/%Y")
@@ -48,6 +52,7 @@ class Pieza:
         self.ext_a, self.ext_b = ext_a, ext_b
         self.gauge, self.qty, self.material = gauge, qty, material
         self.angle = angle                        # grados (curva)
+        self.len_aprox = False                    # True si el largo es estimado (no venía en la lista)
 
     @property
     def descr(self):
@@ -112,7 +117,7 @@ def desarrollo_cono(p):
         blanks.append(dict(tipo="cono", length=seg, seg_nominal=seg,
                            wa=round(wa), ha=round(ha), wb=round(wb), hb=round(hb),
                            ga=round(ga), gb=round(gb), a=a, b=b, ref=p.ref,
-                           etiqueta=etiqueta, gauge=p.gauge,
+                           etiqueta=etiqueta, gauge=p.gauge, len_aprox=getattr(p, "len_aprox", False),
                            w=round((wa + wb) / 2), h=round((ha + hb) / 2)))
         cum += seg
     return blanks
@@ -394,6 +399,7 @@ def _draw_dev(ax, b, p):
         ax.set_xlim(-70,bw+50); ax.set_ylim(-50,bh+60)
     elif b["tipo"] == "cono":
         ga, gb, L = b["ga"], b["gb"], b["length"]
+        pad = max(ga, gb, L) * 0.06
         # contorno trapecio
         ax.add_patch(plt.Polygon([(0,0),(ga,0),(gb,L),(0,L)], fill=False, lw=1.3))
         fa = _cono_fold_positions(b["wa"], b["ha"])
@@ -406,17 +412,17 @@ def _draw_dev(ax, b, p):
         # pliegues internos (abanican)
         for k in (1,2,3):
             ax.plot([fa[k],fb[k]],[0,L],ls="--",lw=0.7,color="#06c")
-        # cotas: girth en ambos extremos + longitud
-        _dim_h(ax,0,ga,-22,f"{ga}")
-        _dim_h(ax,0,gb,L+14,f"{gb}")
-        _dim_v(ax,0,L,-30,f"{L}")
-        ax.text(PITTS_BOLSA/2,L*0.5,"P.bolsa\n35",ha="center",va="center",fontsize=6,color="#a33")
-        ax.text(ga-PITTS_PEST/2,L*0.18,"pest.\n10",ha="center",va="center",fontsize=6,color="#36c")
+        # cotas: girth en ambos extremos + longitud (escaladas)
+        _dim_h(ax, 0, ga, -pad, f"desarrollo {ga}", off=pad*0.15)
+        _dim_h(ax, 0, gb, L+pad*0.3, f"desarrollo {gb}", off=pad*0.15)
+        Ltxt = f"L≈{L}  (estimat)" if b.get("len_aprox") else f"L={L}"
+        _dim_v(ax, 0, L, -pad, Ltxt)
         ax.text(ga*0.5, L*0.5, f"secció {b['wa']}x{b['ha']} → {b['wb']}x{b['hb']}",
-                ha="center", va="center", fontsize=6.5, color="#555")
-        ax.set_xlim(-80,max(ga,gb)+30); ax.set_ylim(-60,L+60)
+                ha="center", va="center", fontsize=7, color="#555")
+        ax.set_xlim(-pad*2.2, max(ga,gb)+pad); ax.set_ylim(-pad*2, L+pad*1.8)
     else:
         g,L = b["girth"],b["length"]
+        pad = max(g, L) * 0.06
         ax.add_patch(plt.Rectangle((0,0),g,L,fill=False,lw=1.3))
         ax.add_patch(plt.Rectangle((0,0),PITTS_BOLSA,L,facecolor="#f3d9d9",ec="none"))
         ax.add_patch(plt.Rectangle((g-PITTS_PEST,0),PITTS_PEST,L,facecolor="#d9e6f3",ec="none"))
@@ -427,12 +433,10 @@ def _draw_dev(ax, b, p):
               (PITTS_BOLSA+b["w"]+b["h"],PITTS_BOLSA+2*b["w"]+b["h"],str(b["w"])),
               (PITTS_BOLSA+2*b["w"]+b["h"],g-PITTS_PEST,str(b["h"])),
               (g-PITTS_PEST,g,"10")]
-        for x1,x2,t in segx: _dim_h(ax,x1,x2,L+22,t)
-        _dim_h(ax,0,g,L+70,f"Desarrollo total = {g}")
-        _dim_v(ax,0,L,-22,f"{L}")
-        ax.text(PITTS_BOLSA/2,L*0.5,"P.bolsa\n35",ha="center",va="center",fontsize=6.5,color="#a33")
-        ax.text(g-PITTS_PEST/2,L*0.5,"pest.\n10",ha="center",va="center",fontsize=6.5,color="#36c")
-        ax.set_xlim(-70,g+30); ax.set_ylim(-30,L+95)
+        for x1,x2,t in segx: _dim_h(ax, x1, x2, L+pad*0.4, t, off=pad*0.12)
+        _dim_h(ax, 0, g, L+pad*1.6, f"Desarrollo total = {g}", off=pad*0.15)
+        _dim_v(ax, 0, L, -pad, f"L={L}")
+        ax.set_xlim(-pad*1.6, g+pad); ax.set_ylim(-pad*1.6, L+pad*2.8)
     ax.set_aspect("equal"); ax.axis("off")
 
 def _cajetin(fig, p, b):
@@ -440,6 +444,8 @@ def _cajetin(fig, p, b):
     ax.add_patch(plt.Rectangle((0,0),1,1,fill=False,lw=1,transform=ax.transAxes))
     if p.tipo == "cono":
         seccion = f"{p.w}x{p.h} → {p.w2}x{p.h2} mm"
+        if getattr(p, "len_aprox", False):
+            seccion += "  · L estimat (ajustar)"
     elif p.tipo == "curva":
         seccion = f"{p.w} x {p.h} mm · gir {p.angle}°"
     else:
