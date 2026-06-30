@@ -65,6 +65,15 @@ def to_pieces(groups):
                                           gauge=0.8, qty=1))
             elif codi == "tapa":
                 pcs.append(despiece.Pieza(f"P{n}", "tapa", w1, h1, qty=max(1, int(round(uts)))))
+            elif codi in ("c90", "c45"):
+                ang = 90 if codi == "c90" else 45
+                pcs.append(despiece.Pieza(f"P{n}", "curva", w1, h1, angle=ang,
+                                          ext_a="M20", ext_b="M20", gauge=0.8,
+                                          qty=max(1, int(round(uts)))))
+            elif codi == "inj":
+                pcs.append(despiece.Pieza(f"P{n}", "injert", w1, h1, L=despiece.INJERT_COLLAR,
+                                          ext_a="M20", ext_b="M20", gauge=0.8,
+                                          qty=max(1, int(round(uts)))))
     return pcs
 
 def generate_all(csv_text, outdir, project=None, client=None):
