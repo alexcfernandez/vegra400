@@ -2,7 +2,7 @@
 """Orquestador: de la lista de piezas (revisada) a los 3 entregables."""
 import os, math
 from collections import OrderedDict
-from engine import precios, despiece
+from engine import precios, despiece, materiales
 
 COLS = ["grup", "codi", "descr", "w1", "h1", "w2", "h2", "uts", "unit", "preu"]
 
@@ -46,7 +46,8 @@ def generate_all(csv_text, outdir):
     os.makedirs(outdir, exist_ok=True)
     groups, labor = parse_csv(csv_text)
     out = {}
-    out["presupuesto"] = precios.build_budget(groups, labor, os.path.join(outdir, "presupuesto_auto.xlsx"))
+    mats = materiales.compute(groups)
+    out["presupuesto"] = precios.build_budget(groups, labor, os.path.join(outdir, "presupuesto_auto.xlsx"), materials=mats)
     pcs = to_pieces(groups)
     if pcs:
         out["dxf"] = despiece.build_cnc_dxf(pcs, os.path.join(outdir, "despiece_corte.dxf"))
