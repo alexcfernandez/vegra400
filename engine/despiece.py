@@ -294,11 +294,24 @@ def _iso(ax, w, h, L, ea, eb):
     ax.text(*np.add(np.divide(np.add(P["A"],P["D"]),2),(-6,4)), f"W={w}", ha="center", fontsize=7.5)
     ax.set_aspect("equal"); ax.axis("off")
 
+def _exag(a, b, lo=0.72):
+    """Solo para la VISTA isométrica (NO para el corte): si una dimensión cambia
+       poco, se exagera para que se VEA que estrecha/ensancha. Si no cambia, intacta.
+       Las cotas escritas siempre son las reales."""
+    if not a or a == b:
+        return b
+    r = b / a
+    if abs(1 - r) < (1 - lo):
+        r = lo if r < 1 else 1.0 / lo
+    return a * r
+
 def _iso_cono(ax, w1, h1, w2, h2, L, ea, eb):
     c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
     def proj(x,y,z): return ((x-y)*c, z+(x+y)*s)
+    wD, hD = _exag(w1, w2), _exag(h1, h2)     # secciones de DIBUJO (exageradas)
+    LD = min(L, 2.2 * max(w1, h1, wD, hD))    # acorta el largo en pantalla para que se note el estrechamiento
     near = {"P0":(0,0,0),"P1":(0,w1,0),"P2":(0,w1,h1),"P3":(0,0,h1)}
-    far  = {"Q0":(L,0,0),"Q1":(L,w2,0),"Q2":(L,w2,h2),"Q3":(L,0,h2)}
+    far  = {"Q0":(LD,0,0),"Q1":(LD,wD,0),"Q2":(LD,wD,hD),"Q3":(LD,0,hD)}
     P = {k: proj(*v) for k,v in {**near, **far}.items()}
     edges = [("P0","P1"),("P1","P2"),("P2","P3"),("P3","P0"),
              ("Q0","Q1"),("Q1","Q2"),("Q2","Q3"),("Q3","Q0"),
@@ -309,7 +322,12 @@ def _iso_cono(ax, w1, h1, w2, h2, L, ea, eb):
     ax.text(*np.add(P["Q2"],(3,4)),  eb, ha="left",  va="bottom", fontsize=8, color="#b00")
     ax.text(*np.add(np.divide(np.add(P["P0"],P["P3"]),2),(-12,0)), f"H1={h1}", ha="right", va="center", fontsize=7.5)
     ax.text(*np.add(np.divide(np.add(P["Q0"],P["Q3"]),2),(10,0)), f"H2={h2}", ha="left", va="center", fontsize=7.5)
+    if w1 != w2:
+        ax.text(*np.add(np.divide(np.add(P["P0"],P["P1"]),2),(-4,4)), f"W1={w1}", ha="center", fontsize=7)
+        ax.text(*np.add(np.divide(np.add(P["Q0"],P["Q1"]),2),(4,4)),  f"W2={w2}", ha="center", fontsize=7)
     ax.text(*np.add(np.divide(np.add(P["P0"],P["Q0"]),2),(0,-12)), f"L={L}", ha="center", fontsize=7.5)
+    ax.text(*np.add(P["Q1"],(6,-16)), "(esquemàtic · cotes reals)", ha="left", va="top",
+            fontsize=6, color="#999")
     ax.set_aspect("equal"); ax.axis("off")
 
 def export_pdf(piezas, path):
