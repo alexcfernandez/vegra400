@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Orquestador: de la lista de piezas (revisada) a los 3 entregables."""
-import os, math
+import os, math, re
 from collections import OrderedDict
 from engine import precios, despiece, materiales
 
@@ -90,6 +90,17 @@ def to_pieces(groups):
                 pcs.append(despiece.Pieza(f"P{n}", "injert", w1, h1, L=despiece.INJERT_COLLAR,
                                           ext_a="M20", ext_b="M20", gauge=0.8,
                                           qty=(q_real or max(1, int(round(uts))))))
+            elif codi in ("esp", "des", "tmalla"):
+                # peces sense desenvolupament automatic: surten al parte com a
+                # ESPECIAL (dibuix a ma) amb les seves dades, perque no desapareguin.
+                # Pero les linies que NO son peces (suports, aillament, cargoleria)
+                # no es dibuixen: nomes van al pressupost.
+                if codi == "esp" and re.search(r"suporta|cargol|aillam|aïllam|espuma", descr, re.I):
+                    continue
+                pcs.append(despiece.Pieza(f"P{n}", "especial", w1, h1, w2=w2, h2=h2,
+                                          ext_a="M20", ext_b="M20", gauge=0.8,
+                                          qty=(q_real or max(1, int(round(uts)))),
+                                          descr=descr))
     return pcs
 
 def generate_all(csv_text, outdir, project=None, client=None):
