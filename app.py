@@ -12,9 +12,10 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 UP = os.path.join(BASE, "uploads"); GEN = os.path.join(BASE, "generated")
 os.makedirs(UP, exist_ok=True); os.makedirs(GEN, exist_ok=True)
 SAMPLE = os.path.join(BASE, "sample_assecador.csv")
-SCAFFOLD = ("grup;codi;descr;w1;h1;w2;h2;uts;unit;preu\n"
+SCAFFOLD = ("grup;codi;descr;w1;h1;w2;h2;uts;unit;preu;peces\n"
             "# Completa la llista de peces (o puja un DXF/PDF per pre-omplir-la)\n"
-            "# codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp | treb=ma d'obra\n")
+            "# codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp | treb=ma d'obra\n"
+            "# 'peces' = nº de peces FISIQUES reals per al taller (x1/x2); buit = 1. Independent d'uts (= el que factura).\n")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
@@ -52,7 +53,7 @@ REVIEW = CSS + """
 {% if err %}<div class="err">{{err}}</div>{% endif %}
 {% if cotas %}<div class="note"><b>Llegit del plano:</b> {{cotas}}<br>
 <span class="muted">El muntatge automatic de la llista de peces des del plano esta en construccio; de moment revisa/completa la llista abans de generar.</span></div>{% endif %}
-<p class="muted">Format: <code>grup;codi;descr;w1;h1;w2;h2;uts;unit;preu</code> &middot; codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp &middot; treb=ma d'obra &middot; preu nomes per a peces especials i ma d'obra.</p>
+<p class="muted">Format: <code>grup;codi;descr;w1;h1;w2;h2;uts;unit;preu;peces</code> &middot; codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp &middot; treb=ma d'obra &middot; <b>uts</b> = el que factura (preu) &middot; <b>peces</b> = peces reals per al taller (l'x1/x2; buit = 1) &middot; preu nomes per a peces especials i ma d'obra.</p>
 <form method="post" action="/generate">
   <p><b>Obra/Projecte:</b> <input type="text" name="project" value="{{project|default('')}}" placeholder="ex: EMBOTITS COLLELL - ASSECADOR" style="width:48%">
   &nbsp;<b>Client:</b> <input type="text" name="client" value="{{client|default('')}}" placeholder="ex: FRITECNO / Sr. ..." style="width:30%"></p>
