@@ -1,0 +1,9 @@
+flask>=3.0
+openpyxl>=3.1
+ezdxf>=1.4
+pymupdf>=1.24
+pytesseract>=0.3.10
+pillow>=10.0
+matplotlib>=3.8
+numpy>=1.26
+gunicorn>=21.0
