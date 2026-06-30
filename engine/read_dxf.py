@@ -1,64 +1,72 @@
 # -*- coding: utf-8 -*-
-"""Lector de DXF: cotas reales (DIMENSION), capas de conducto y geometria.
-Lectura en una sola pasada y defensiva, para no agotar memoria en DXF grandes.
-La reconstruccion seccion+longitud por pieza es el modulo siguiente."""
+"""Lector de DXF en STREAMING (baja memoria): funciona con archivos de 80 MB+.
+Extrae cotas (DIMENSION cod.42), capas de conductos/cotas y longitudes,
+sin cargar todo el archivo en memoria. La reconstruccion pieza a pieza es el modulo siguiente."""
 import math, re
-from collections import defaultdict
 
-def _open(path):
-    import ezdxf
-    try:
-        return ezdxf.readfile(path)              # ligero
-    except Exception:
-        from ezdxf import recover
-        doc, _ = recover.readfile(path)          # robusto (mas memoria)
-        return doc
+COND_RX = re.compile(r"cond|conduct|clima|tub|aire|impuls|retorn|ventil", re.I)
+COTA_RX = re.compile(r"cota|cote", re.I)
 
-def analyze(path):
-    doc = _open(path)
-    msp = doc.modelspace()
-    dim_vals = []
-    duct_len = defaultdict(float)
-    duct_n = defaultdict(int)
-    blocks = defaultdict(int)
-    rx = re.compile(r"COND|Cono", re.I)
-    for e in msp:                                # UNA sola pasada
-        t = e.dxftype()
-        if t == "DIMENSION":
-            try:
-                m = e.get_measurement()
-                if isinstance(m, (int, float)) and m > 1:
-                    dim_vals.append(round(m))
-            except Exception:
-                pass
-        elif t == "LINE":
-            lyr = e.dxf.layer
-            if rx.search(lyr):
+def _pairs(fh):
+    while True:
+        c = fh.readline()
+        if c == "": return
+        v = fh.readline()
+        if v == "": return
+        yield c.strip(), v.rstrip("\r\n")
+
+def analyze(path, max_layers=25):
+    ent = {}; lay = {}; dim_vals = []; duct_len = {}
+    version = "?"; cur_type = None; cur_layer = "0"
+    lx0 = ly0 = lx1 = ly1 = None; want_ver = False
+    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+        for code, val in _pairs(fh):
+            if code == "9":
+                want_ver = (val == "$ACADVER"); continue
+            if want_ver and code == "1":
+                version = val; want_ver = False; continue
+            if code == "0":
+                if cur_type == "LINE" and None not in (lx0, ly0, lx1, ly1) and COND_RX.search(cur_layer or ""):
+                    duct_len[cur_layer] = duct_len.get(cur_layer, 0) + math.dist((lx0, ly0), (lx1, ly1))
+                cur_type = val; ent[val] = ent.get(val, 0) + 1
+                cur_layer = "0"; lx0 = ly0 = lx1 = ly1 = None
+            elif code == "8":
+                cur_layer = val; lay[val] = lay.get(val, 0) + 1
+            elif code == "42" and cur_type == "DIMENSION":
                 try:
-                    s, q = e.dxf.start, e.dxf.end
-                    duct_len[lyr] += math.dist((s.x, s.y), (q.x, q.y))
-                    duct_n[lyr] += 1
+                    m = float(val)
+                    if m > 1: dim_vals.append(round(m))
                 except Exception:
                     pass
-        elif t == "INSERT":
-            blocks[e.dxf.name] += 1
+            elif cur_type == "LINE":
+                try:
+                    if code == "10": lx0 = float(val)
+                    elif code == "20": ly0 = float(val)
+                    elif code == "11": lx1 = float(val)
+                    elif code == "21": ly1 = float(val)
+                except Exception:
+                    pass
     cotas = sorted({v for v in dim_vals if v >= 50})
-    duct_layers = {k: {"lines": duct_n[k], "length_m": round(v / 1000, 1)}
-                   for k, v in duct_len.items() if duct_n[k]}
-    top_blocks = dict(sorted(blocks.items(), key=lambda x: -x[1])[:10])
-    return {"version": str(doc.acad_release), "n_dim": len(dim_vals),
-            "cotas": cotas, "duct_layers": duct_layers, "blocks": top_blocks}
+    cond_layers = {k: lay[k] for k in lay if COND_RX.search(k)}
+    for k, v in duct_len.items():
+        cond_layers.setdefault(k, 0)
+    cota_layers = {k: lay[k] for k in lay if COTA_RX.search(k)}
+    top_layers = dict(sorted(lay.items(), key=lambda x: -x[1])[:max_layers])
+    return {"version": version, "n_dim": len(dim_vals), "cotas": cotas,
+            "cond_layers": cond_layers, "cota_layers": cota_layers,
+            "duct_len_m": {k: round(v / 1000, 1) for k, v in duct_len.items()},
+            "top_layers": top_layers,
+            "entities": dict(sorted(ent.items(), key=lambda x: -x[1])[:10])}
 
 def review_csv(a):
-    """Pre-omple la revisio amb les dades REALS del DXF + scaffold buit per completar.
-    No inventa peces: nomes mostra el que s'ha llegit."""
-    cotas = ", ".join(str(c) for c in a["cotas"])
-    capas = "; ".join("%s (%s m)" % (k, v["length_m"]) for k, v in a["duct_layers"].items()) or "cap"
+    cond = "; ".join("%s (%s el.)" % (k, v) for k, v in a["cond_layers"].items()) or "cap detectada pel nom"
+    cotal = "; ".join("%s (%s)" % (k, v) for k, v in a["cota_layers"].items()) or "cap"
+    cotas = ", ".join(str(c) for c in a["cotas"]) or "-"
     return "\n".join([
         "grup;codi;descr;w1;h1;w2;h2;uts;unit;preu",
-        "# DXF llegit OK - %d cotes reals" % a["n_dim"],
-        "# Capes de conducte: %s" % capas,
+        "# DXF llegit OK (%s) - %d cotes DIMENSION" % (a["version"], a["n_dim"]),
+        "# Capes de CONDUCTES detectades: %s" % cond,
+        "# Capes de COTES: %s" % cotal,
         "# Cotes (mm): %s" % cotas,
-        "# (el muntatge automatic seccio+llargada per peca es el modul seguent;",
-        "#  de moment completa les files amb el format de dalt)",
+        "# (els noms de capa canvien segons el projecte; el muntatge automatic seccio+llargada es el modul seguent)",
     ])
