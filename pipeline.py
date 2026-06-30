@@ -57,12 +57,20 @@ def to_pieces(groups):
                 pcs.append(despiece.Pieza(f"P{n}", "conducte", w1, h1, L=tl,
                                           ext_a="M20", ext_b="M20", gauge=0.8, qty=ntr))
             elif codi == "red":
-                # CONO: longitud completa; el troceado a 1500 + interpolación
-                # de la sección lo hace desarrollo_cono() dentro de despiece.py
-                Lmm = max(1, int(round(uts * 1000))) if unit == "m" else max(1, int(round(uts)))
-                pcs.append(despiece.Pieza(f"P{n}", "cono", w1, h1, L=Lmm,
-                                          w2=w2, h2=h2, ext_a="M20", ext_b="M20",
-                                          gauge=0.8, qty=1))
+                # CONO: si viene en metros, ese es el largo real; si viene como pieza
+                # suelta (ut) sin largo, estimamos el largo por la pendiente del estrechamiento.
+                aprox = False
+                if unit == "m" and uts > 0:
+                    Lmm = max(1, int(round(uts * 1000))); q = 1
+                else:
+                    dmax = max(abs(w1 - w2), abs(h1 - h2))
+                    Lmm = max(despiece.CONO_MIN_LEN, int(round(despiece.CONO_TAPER * dmax)))
+                    q = max(1, int(round(uts))); aprox = True
+                pz = despiece.Pieza(f"P{n}", "cono", w1, h1, L=Lmm,
+                                    w2=w2, h2=h2, ext_a="M20", ext_b="M20",
+                                    gauge=0.8, qty=q)
+                pz.len_aprox = aprox
+                pcs.append(pz)
             elif codi == "tapa":
                 pcs.append(despiece.Pieza(f"P{n}", "tapa", w1, h1, qty=max(1, int(round(uts)))))
             elif codi in ("c90", "c45"):
