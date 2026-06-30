@@ -27,8 +27,8 @@ METU_DEDUCT = 0      # el metu se integra: el largo de chapa = largo de pieza   
 PAO_MARGIN  = 0      # mm extra dejado en extremo PAO para rematar en obra  [ASUNCIÓN -> confirmar]
 TAPA_PEST   = 25     # mm pestaña de la tapa                                [ASUNCIÓN -> confirmar]
 
-PROYECTO = "EMBOTITS COLLELL - ASSECADOR"
-CLIENTE  = "FRITECNO / Sr. Carles Pagès"
+PROYECTO = "(projecte)"
+CLIENTE  = "(client)"
 FECHA    = datetime.date.today().strftime("%d/%m/%Y")
 
 # ----------------------- MODELO DE DATOS -----------------------
@@ -272,7 +272,11 @@ def export_csv_y_tabla(piezas, path):
 # API del módulo
 def build_cnc_dxf(piezas, path):
     export_dxf(piezas, path); return path
-def build_shop_pdf(piezas, path):
+def build_shop_pdf(piezas, path, project=None, client=None, date=None):
+    global PROYECTO, CLIENTE, FECHA
+    if project: PROYECTO = project
+    if client: CLIENTE = client
+    if date: FECHA = date
     export_pdf(piezas, path); return path
 def parts_csv(piezas, path):
     export_csv_y_tabla(piezas, path); return path
