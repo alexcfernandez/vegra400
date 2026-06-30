@@ -17,7 +17,7 @@ SCAFFOLD = ("grup;codi;descr;w1;h1;w2;h2;uts;unit;preu\n"
             "# codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp | treb=ma d'obra\n")
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
 CSS = """<style>
 body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:30px auto;color:#222;padding:0 16px}
