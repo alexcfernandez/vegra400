@@ -6,7 +6,7 @@ import os
 from flask import Flask, request, render_template_string, send_from_directory
 from werkzeug.utils import secure_filename
 import pipeline
-from engine import extract, read_dxf
+from engine import extract, read_dxf, ai_assist
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 UP = os.path.join(BASE, "uploads"); GEN = os.path.join(BASE, "generated")
@@ -97,7 +97,10 @@ def process():
                 try:
                     a = read_dxf.analyze(path)
                     cotas = ", ".join(str(c) for c in a["cotas"])
-                    csv_text = read_dxf.review_csv(a)
+                    try:
+                        csv_text = ai_assist.build_pieces(a)      # la IA munta la llista
+                    except Exception:
+                        csv_text = read_dxf.review_csv(a)         # sense IA: scaffold per completar
                 except Exception as e:
                     err = "No s'ha pogut llegir el DXF (%s). Pot ser massa pesat per al servidor; completa la llista a ma o amplia la memoria a Railway." % type(e).__name__
             else:
