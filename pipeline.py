@@ -18,11 +18,10 @@ def parse_csv(text):
         s = ln.strip()
         if not s or s.startswith("#"): continue
         parts = [c.strip() for c in s.split(";")]
-        if parts[0].lower() == "grup": continue            # cabecera
+        if parts[0].lower() == "grup": continue
         if len(parts) < 4: continue
         grup, codi, descr = parts[0], parts[1], parts[2]
         rest = parts[3:]
-        # localizar la unidad (m/ut) para anclar columnas aunque la IA se salte camps buits
         unit_idx = None
         for i, p in enumerate(rest):
             if p.strip().lower() in UNITS:
@@ -32,7 +31,7 @@ def parse_csv(text):
             uts = _num(rest[unit_idx - 1])
             dims = rest[:unit_idx - 1]
             preu = rest[unit_idx + 1] if len(rest) > unit_idx + 1 else ""
-        else:                                              # sin unidad: posicional clásico
+        else:
             rest += [""] * (7 - len(rest))
             dims = rest[:4]; uts = _num(rest[4]); unit = rest[5] or "ut"; preu = rest[6]
         w1 = int(_num(dims[0])) if len(dims) > 0 else 0
@@ -51,12 +50,19 @@ def to_pieces(groups):
     for _titulo, items in groups:
         for (codi, descr, w1, h1, w2, h2, uts, unit, _preu) in items:
             n += 1
-            if codi in ("rec", "red"):
+            if codi == "rec":
                 Lmm = max(1, int(round(uts * 1000)))
                 ntr = max(1, math.ceil(Lmm / despiece.MAX_TRAMO))
                 tl = int(round(Lmm / ntr))
                 pcs.append(despiece.Pieza(f"P{n}", "conducte", w1, h1, L=tl,
                                           ext_a="M20", ext_b="M20", gauge=0.8, qty=ntr))
+            elif codi == "red":
+                # CONO: longitud completa; el troceado a 1500 + interpolación
+                # de la sección lo hace desarrollo_cono() dentro de despiece.py
+                Lmm = max(1, int(round(uts * 1000))) if unit == "m" else max(1, int(round(uts)))
+                pcs.append(despiece.Pieza(f"P{n}", "cono", w1, h1, L=Lmm,
+                                          w2=w2, h2=h2, ext_a="M20", ext_b="M20",
+                                          gauge=0.8, qty=1))
             elif codi == "tapa":
                 pcs.append(despiece.Pieza(f"P{n}", "tapa", w1, h1, qty=max(1, int(round(uts)))))
     return pcs
