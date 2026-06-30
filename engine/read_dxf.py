@@ -28,12 +28,44 @@ def _is_plan(layer):
         v in L for v in ("front", "left", "right", "back", "iso ", "iso-", "isosw", "isonw"))
 
 # ----------------------- LECTOR RICO (ezdxf) -----------------------
+def _measure_runs(segs):
+    """segs: lista de (x0,y0,x1,y1) en PLANTA de un sistema. Empareja paredes
+       paralelas contiguas (sin otra pared en medio) -> tram = (ample, llarg)."""
+    H = []; V = []; seen = set()
+    for x0, y0, x1, y1 in segs:
+        k = (round(x0), round(y0), round(x1), round(y1))
+        if k in seen: continue
+        seen.add(k)
+        if abs(y1 - y0) < 2 and abs(x1 - x0) > 50:
+            H.append((min(x0, x1), max(x0, x1), round((y0 + y1) / 2)))
+        elif abs(x1 - x0) < 2 and abs(y1 - y0) > 50:
+            V.append((min(y0, y1), max(y0, y1), round((x0 + x1) / 2)))
+    runs = []
+    for grp in (H, V):
+        grp = sorted(grp, key=lambda s: s[2])
+        for i in range(len(grp)):
+            a0, a1, ac = grp[i]
+            for j in range(i + 1, len(grp)):
+                b0, b1, bc = grp[j]
+                if bc - ac > 2600: break
+                ov = min(a1, b1) - max(a0, b0)
+                if ov > 150 and 80 < (bc - ac) < 2600:
+                    mid = any(ac < grp[k][2] < bc and
+                              min(a1, grp[k][1]) - max(a0, grp[k][0]) > 150
+                              for k in range(len(grp)) if k != i and k != j)
+                    if not mid:
+                        runs.append((int(round(bc - ac)), int(round(ov))))
+                        break
+    return runs
+
+
 def _analyze_ezdxf(path):
     import ezdxf
     doc = ezdxf.readfile(path)
     msp = doc.modelspace()
     dims = []                      # (valor, x, y)
     duct_lines = {}                # sistema -> [(mx,my,length,is_plan)]
+    plan_segs = {}                 # sistema -> [(x0,y0,x1,y1)] solo planta
     cond_layers = {}
     for e in msp:
         t = e.dxftype()
@@ -56,7 +88,10 @@ def _analyze_ezdxf(path):
             cond_layers[lyr] = cond_layers.get(lyr, 0) + 1
             a, b = e.dxf.start, e.dxf.end
             mx, my = (a.x + b.x) / 2.0, (a.y + b.y) / 2.0
-            duct_lines.setdefault(s, []).append((mx, my, math.dist((a.x, a.y), (b.x, b.y)), _is_plan(lyr)))
+            isp = _is_plan(lyr)
+            duct_lines.setdefault(s, []).append((mx, my, math.dist((a.x, a.y), (b.x, b.y)), isp))
+            if isp:
+                plan_segs.setdefault(s, []).append((a.x, a.y, b.x, b.y))
 
     # asignar cada cota al sistema cuya geometría tiene más cerca
     cotas_by_sys = {}
@@ -79,10 +114,18 @@ def _analyze_ezdxf(path):
         plan = sum(l for _mx, _my, l, p in lines if p)
         duct_len_m[s] = round(plan / 1000.0, 1)
     n1500 = sum(1 for v in allvals if v == 1500)
+    # medir tramos (ancho x largo) por sistema, quedándose con los anchos creíbles
+    runs_by_system = {}
+    for s, segs in plan_segs.items():
+        runs = _measure_runs(segs)
+        # consolidar: redondear ancho a múltiplo de 5 y quedarnos con tramos con largo útil
+        clean = sorted({(round(w / 5) * 5, l) for w, l in runs if l >= 200}, key=lambda t: -t[1])
+        if clean:
+            runs_by_system[s] = clean[:25]
     return {"version": doc.dxfversion, "engine": "ezdxf", "n_dim": len(dims),
             "cotas": cotas, "cotas_by_system": cotas_by_system,
             "cond_layers": cond_layers, "duct_len_m": duct_len_m,
-            "n_trams_1500": n1500}
+            "runs_by_system": runs_by_system, "n_trams_1500": n1500}
 
 # ----------------------- FALLBACK STREAMING (archivos enormes) -----------------------
 def _pairs(fh):
