@@ -171,13 +171,13 @@ def _analyze_ezdxf(path):
         plan = sum(l for _mx, _my, l, p in lines if p)
         duct_len_m[s] = round(plan / 1000.0, 1)
     n1500 = sum(1 for v in allvals if v == 1500)
-    # medir tramos (ancho x largo) por sistema, filtrando ruido (un tram real es
-    # mas largo que ancho, no excesivamente ancho, y de cierta longitud)
+    # medir tramos (ancho x largo) por sistema. Filtrar ruido: un tram real es mas
+    # largo que ancho, ni minúsculo ni exagerado d'ample (200..1200), de cert llarg.
     runs_by_system = {}
     for s, segs in plan_segs.items():
         runs = _measure_runs(segs)
         clean = sorted({(round(w / 5) * 5, l) for w, l in runs
-                        if l >= 400 and w <= 1200 and l >= 0.8 * w}, key=lambda t: -t[1])
+                        if l >= 400 and 200 <= w <= 1200 and l >= 0.8 * w}, key=lambda t: -t[1])
         if clean:
             runs_by_system[s] = clean[:25]
     # ALTURAS de seccion leidas en los alzados, por sistema
@@ -187,11 +187,20 @@ def _analyze_ezdxf(path):
         if hs:
             from collections import Counter as _C
             heights_by_system[s] = [h for h, _n in _C(hs).most_common(10)]
+    # detectar el/los con(s) i TREURE del runs els trams que ja SON el con (mateix
+    # sistema i ample), per no comptar-los dos cops (con injectat + recte).
+    cones = _detect_cones(runs_by_system, cotas_by_system)
+    for c in cones:
+        s, w = c["system"], c["width"]
+        if s in runs_by_system:
+            runs_by_system[s] = [(rw, rl) for (rw, rl) in runs_by_system[s] if rw != w]
+            if not runs_by_system[s]:
+                del runs_by_system[s]
     return {"version": doc.dxfversion, "engine": "ezdxf", "n_dim": len(dims),
             "cotas": cotas, "cotas_by_system": cotas_by_system,
             "cond_layers": cond_layers, "duct_len_m": duct_len_m,
             "runs_by_system": runs_by_system, "heights_by_system": heights_by_system,
-            "cones": _detect_cones(runs_by_system, cotas_by_system),
+            "cones": cones,
             "n_trams_1500": n1500}
 
 # ----------------------- FALLBACK STREAMING (archivos enormes) -----------------------
