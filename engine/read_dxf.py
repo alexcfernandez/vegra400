@@ -28,6 +28,31 @@ def _is_plan(layer):
         v in L for v in ("front", "left", "right", "back", "iso ", "iso-", "isosw", "isonw"))
 
 # ----------------------- LECTOR RICO (ezdxf) -----------------------
+def _measure_heights(segs):
+    """segs: lineas (x0,y0,x1,y1) de una vista de ALZADO. Mide los gaps verticales
+       entre lineas horizontales = ALTURAS de seccion."""
+    H = []; seen = set()
+    for x0, y0, x1, y1 in segs:
+        k = (round(x0), round(y0), round(x1), round(y1))
+        if k in seen: continue
+        seen.add(k)
+        if abs(y1 - y0) < 2 and abs(x1 - x0) > 30:
+            H.append((min(x0, x1), max(x0, x1), round((y0 + y1) / 2)))
+    H.sort(key=lambda s: s[2]); hs = []
+    for i in range(len(H)):
+        a0, a1, ac = H[i]
+        for j in range(i + 1, len(H)):
+            b0, b1, bc = H[j]
+            if bc - ac > 2000: break
+            ov = min(a1, b1) - max(a0, b0)
+            if ov > 100 and 80 < (bc - ac) < 2000:
+                mid = any(ac < H[k][2] < bc and min(a1, H[k][1]) - max(a0, H[k][0]) > 100
+                          for k in range(len(H)) if k != i and k != j)
+                if not mid:
+                    hs.append(int(round((bc - ac) / 5) * 5)); break
+    return hs
+
+
 def _measure_runs(segs):
     """segs: lista de (x0,y0,x1,y1) en PLANTA de un sistema. Empareja paredes
        paralelas contiguas (sin otra pared en medio) -> tram = (ample, llarg)."""
@@ -66,6 +91,7 @@ def _analyze_ezdxf(path):
     dims = []                      # (valor, x, y)
     duct_lines = {}                # sistema -> [(mx,my,length,is_plan)]
     plan_segs = {}                 # sistema -> [(x0,y0,x1,y1)] solo planta
+    elev_segs = {}                 # sistema -> [(x0,y0,x1,y1)] solo alzados (front/left)
     cond_layers = {}
     for e in msp:
         t = e.dxftype()
@@ -92,6 +118,8 @@ def _analyze_ezdxf(path):
             duct_lines.setdefault(s, []).append((mx, my, math.dist((a.x, a.y), (b.x, b.y)), isp))
             if isp:
                 plan_segs.setdefault(s, []).append((a.x, a.y, b.x, b.y))
+            elif "front" in lyr.lower() or "left" in lyr.lower():
+                elev_segs.setdefault(s, []).append((a.x, a.y, b.x, b.y))
 
     # asignar cada cota al sistema cuya geometría tiene más cerca
     cotas_by_sys = {}
@@ -114,18 +142,27 @@ def _analyze_ezdxf(path):
         plan = sum(l for _mx, _my, l, p in lines if p)
         duct_len_m[s] = round(plan / 1000.0, 1)
     n1500 = sum(1 for v in allvals if v == 1500)
-    # medir tramos (ancho x largo) por sistema, quedándose con los anchos creíbles
+    # medir tramos (ancho x largo) por sistema, filtrando ruido (un tram real es
+    # mas largo que ancho, no excesivamente ancho, y de cierta longitud)
     runs_by_system = {}
     for s, segs in plan_segs.items():
         runs = _measure_runs(segs)
-        # consolidar: redondear ancho a múltiplo de 5 y quedarnos con tramos con largo útil
-        clean = sorted({(round(w / 5) * 5, l) for w, l in runs if l >= 200}, key=lambda t: -t[1])
+        clean = sorted({(round(w / 5) * 5, l) for w, l in runs
+                        if l >= 400 and w <= 1200 and l >= 0.8 * w}, key=lambda t: -t[1])
         if clean:
             runs_by_system[s] = clean[:25]
+    # ALTURAS de seccion leidas en los alzados, por sistema
+    heights_by_system = {}
+    for s, segs in elev_segs.items():
+        hs = [h for h in _measure_heights(segs) if 50 <= h <= 1600]
+        if hs:
+            from collections import Counter as _C
+            heights_by_system[s] = [h for h, _n in _C(hs).most_common(10)]
     return {"version": doc.dxfversion, "engine": "ezdxf", "n_dim": len(dims),
             "cotas": cotas, "cotas_by_system": cotas_by_system,
             "cond_layers": cond_layers, "duct_len_m": duct_len_m,
-            "runs_by_system": runs_by_system, "n_trams_1500": n1500}
+            "runs_by_system": runs_by_system, "heights_by_system": heights_by_system,
+            "n_trams_1500": n1500}
 
 # ----------------------- FALLBACK STREAMING (archivos enormes) -----------------------
 def _pairs(fh):
