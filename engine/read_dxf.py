@@ -84,6 +84,35 @@ def _measure_runs(segs):
     return runs
 
 
+def _detect_cones(runs, cotas):
+    """Detecta un CON/reduccio llarga: un sistema amb UN sol ample estret dominant
+       i una escala d'altures alta. Torna [{system, width, heights:[...]}].
+       El graonat exacte es de Joan; aixo es un punt de partida (extrems reals)."""
+    from collections import Counter
+    cones = []
+    for s, rr in (runs or {}).items():
+        if not rr:
+            continue
+        wc = Counter(w for w, _l in rr)
+        total = sum(wc.values())
+        width, cnt = wc.most_common(1)[0]
+        frac = cnt / total if total else 0
+        # un sol ample estret que domina el sistema
+        if frac < 0.6 or width > 450:
+            continue
+        cs = [c for c in (cotas.get(s) or []) if width + 50 <= c <= 1200]
+        if not cs:
+            continue
+        hmax = max(cs)
+        if hmax < 2.5 * width or hmax - width < 300:
+            continue
+        hmin = width  # el con acaba quadrat (=ample)
+        n = max(3, int(round((hmax - hmin) / 75.0)))
+        heights = [int(round(hmax - (hmax - hmin) * i / n)) for i in range(n + 1)]
+        cones.append({"system": s, "width": int(width), "heights": heights})
+    return cones
+
+
 def _analyze_ezdxf(path):
     import ezdxf
     doc = ezdxf.readfile(path)
@@ -162,6 +191,7 @@ def _analyze_ezdxf(path):
             "cotas": cotas, "cotas_by_system": cotas_by_system,
             "cond_layers": cond_layers, "duct_len_m": duct_len_m,
             "runs_by_system": runs_by_system, "heights_by_system": heights_by_system,
+            "cones": _detect_cones(runs_by_system, cotas_by_system),
             "n_trams_1500": n1500}
 
 # ----------------------- FALLBACK STREAMING (archivos enormes) -----------------------
