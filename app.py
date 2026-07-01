@@ -110,6 +110,7 @@ def process():
                         analysis["duct_len_m"] = a.get("duct_len_m", {})
                         analysis["cotas_by_system"] = a.get("cotas_by_system", {})
                         analysis["runs_by_system"] = a.get("runs_by_system", {})
+                        analysis["heights_by_system"] = a.get("heights_by_system", {})
                         analysis["n_trams_1500"] = a.get("n_trams_1500")
                         img = os.path.join(UP, name + ".png")
                         read_dxf.render_ducts_png(path, img)
