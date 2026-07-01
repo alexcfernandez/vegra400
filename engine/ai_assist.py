@@ -39,6 +39,16 @@ def _img_block(path):
     mt = "image/png" if path.lower().endswith(".png") else "image/jpeg"
     return {"type": "image", "source": {"type": "base64", "media_type": mt, "data": data}}
 
+def _cone_rows(cones):
+    """Files CSV (red) del con, calculades de forma determinista des dels extrems reals."""
+    rows = []
+    for c in cones or []:
+        s = c.get("system", ""); w = int(c.get("width", 0)); hs = c.get("heights", [])
+        for i in range(len(hs) - 1):
+            rows.append("%s;red;Con %dx%d-%dx%d (con estimat, ajustar);%d;%d;%d;%d;3;m;;"
+                        % (s, w, hs[i], w, hs[i + 1], w, hs[i], w, hs[i + 1]))
+    return rows
+
 def build_pieces(a, images=None, model=None, timeout=180):
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
@@ -65,6 +75,13 @@ def build_pieces(a, images=None, model=None, timeout=180):
         dxf_block += ("  MUNTA cada conducte recte com AMPLE(mesurat) x ALTURA(mesurada a l'alçat del mateix sistema).\n"
                       "  Exemple RET: ample 800 + altura 150 -> 800x150 (NO 800x500). Tria l'altura mes coherent\n"
                       "  del seu sistema; son mesures reals, no les marquis '(a confirmar)' ni les inventis.\n")
+    cones = a.get("cones") or []
+    if cones:
+        cl = "; ".join("%s (ample %d, de %d a %d)" % (c["system"], c["width"], c["heights"][0], c["heights"][-1])
+                       for c in cones)
+        dxf_block += ("- CON(S) DETECTAT(S): %s.\n"
+                      "  Les reduccions del con les afegeixo JO automaticament. NO generis tu cap reduccio\n"
+                      "  ni conducte per a aquest con; centra't en la RESTA (fittings, altres conductes, difusors).\n" % cl)
     txt = ("Dades llegides del plano:\n- Capes de conductes: %s\n"
            "- Longitud de linies per sistema (indicador aproximat, NO metres reals): %s\n"
            "%s"
@@ -90,6 +107,17 @@ def build_pieces(a, images=None, model=None, timeout=180):
     text = text.replace("```csv", "").replace("```", "").strip()
     if "grup;codi" not in text:
         text = "grup;codi;descr;w1;h1;w2;h2;uts;unit;preu;peces\n" + text
+    # injectar les reduccions del con (calculades de forma determinista)
+    crows = _cone_rows(cones)
+    if crows:
+        out = []; done = False
+        for ln in text.split("\n"):
+            out.append(ln)
+            if not done and ln.strip().startswith("grup;codi"):
+                out.extend(crows); done = True
+        if not done:
+            out = crows + out
+        text = "\n".join(out)
     via = "imatge+cotes" if images else "cotes"
     note = ("# Llista PRE-MUNTADA per IA (%s) - REVISA-LA abans de generar.\n"
             "# Les linies '#' son l'INVENTARI llegit del pla. Les peces amb '(seccio a confirmar)'\n"
