@@ -49,6 +49,42 @@ def _cone_rows(cones):
                         % (s, w, hs[i], w, hs[i + 1], w, hs[i], w, hs[i + 1]))
     return rows
 
+def _rule_accessories(text, cones):
+    """Accessoris PER REGLA (no mesurats): a cada seccio de conducte li correspon una
+       TAPA (final de ramal) i un INJERT (derivacio). Quantitat 1 -> Joan l'ajusta.
+       No inventa mesures: fa servir les seccions que JA hi ha a la llista."""
+    rec_sections = []          # [(sistema, w, h)] en ordre d'aparicio, sense repetir
+    seen = set(); have = set()
+    for ln in text.split("\n"):
+        s = ln.strip()
+        if not s or s.startswith("#") or s.startswith("grup;codi"):
+            continue
+        p = ln.split(";")
+        if len(p) < 9:
+            continue
+        grp, codi = p[0].strip(), p[1].strip()
+        try:
+            w1 = int(float(p[3])) if p[3].strip() else 0
+            h1 = int(float(p[4])) if p[4].strip() else 0
+        except ValueError:
+            continue
+        if codi == "rec" and w1 > 0 and h1 > 0 and (grp, w1, h1) not in seen:
+            seen.add((grp, w1, h1)); rec_sections.append((grp, w1, h1))
+        if codi in ("tapa", "inj") and w1 > 0 and h1 > 0:
+            have.add((grp, codi, w1, h1))
+    rows = []
+    for grp, w, h in rec_sections:
+        if (grp, "tapa", w, h) not in have:
+            rows.append("%s;tapa;Tapa %dx%d (per regla · ajustar qty);%d;%d;;;1;ut;;" % (grp, w, h, w, h))
+        if (grp, "inj", w, h) not in have:
+            rows.append("%s;inj;Injert %dx%d (per regla · ajustar qty);%d;%d;;;1;ut;;" % (grp, w, h, w, h))
+    # tapa al final de cada con (seccio petita de sortida)
+    for c in cones or []:
+        grp = c.get("system", ""); w = int(c.get("width", 0)); h = int(c.get("heights", [0])[-1])
+        if w > 0 and h > 0 and (grp, "tapa", w, h) not in have:
+            rows.append("%s;tapa;Tapa %dx%d final con (per regla · ajustar qty);%d;%d;;;1;ut;;" % (grp, w, h, w, h))
+    return rows
+
 def build_pieces(a, images=None, model=None, timeout=180):
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
@@ -118,6 +154,11 @@ def build_pieces(a, images=None, model=None, timeout=180):
         if not done:
             out = crows + out
         text = "\n".join(out)
+    # accessoris PER REGLA (tapa + injert per seccio) al final, per revisar
+    arows = _rule_accessories(text, cones)
+    if arows:
+        text = text.rstrip() + ("\n# --- accessoris proposats PER REGLA (ajusta la quantitat o esborra) ---\n"
+                                + "\n".join(arows))
     via = "imatge+cotes" if images else "cotes"
     note = ("# Llista PRE-MUNTADA per IA (%s) - REVISA-LA abans de generar.\n"
             "# Les linies '#' son l'INVENTARI llegit del pla. Les peces amb '(seccio a confirmar)'\n"
