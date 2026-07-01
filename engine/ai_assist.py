@@ -49,6 +49,7 @@ def build_pieces(a, images=None, model=None, timeout=180):
     metres = "; ".join("%s = %s" % (k, v) for k, v in a.get("duct_len_m", {}).items()) or "(no mesurats)"
     by_sys = a.get("cotas_by_system") or {}
     runs = a.get("runs_by_system") or {}
+    hts = a.get("heights_by_system") or {}
     dxf_block = ""
     if by_sys:
         linies = "\n".join("    %s: %s" % (s, ", ".join(str(c) for c in cs)) for s, cs in by_sys.items())
@@ -56,10 +57,14 @@ def build_pieces(a, images=None, model=None, timeout=180):
     if runs:
         rl = "\n".join("    %s: %s" % (s, "; ".join("%dx%d" % (w, l) for w, l in rr[:14]))
                        for s, rr in runs.items())
-        dxf_block += ("- TRAMS MESURATS de la geometria del DXF (ample x llarg, en mm, vista en planta):\n%s\n"
-                      "  L'AMPLE esta mesurat de veritat. L'altura de la seccio sol estar a la llista de cotes.\n"
-                      "  USA aquests amples i llargs per als conductes rectes: son mesures reals, NO els marquis\n"
-                      "  '(a confirmar)'. Combina l'ample mesurat amb l'altura mes plausible de les cotes.\n" % rl)
+        dxf_block += ("- AMPLES x LLARGS mesurats de la geometria (planta, mm):\n%s\n" % rl)
+    if hts:
+        hl = "\n".join("    %s: %s" % (s, ", ".join(str(h) for h in hh)) for s, hh in hts.items())
+        dxf_block += ("- ALTURES de seccio mesurades als ALÇATS (mm):\n%s\n" % hl)
+    if runs or hts:
+        dxf_block += ("  MUNTA cada conducte recte com AMPLE(mesurat) x ALTURA(mesurada a l'alçat del mateix sistema).\n"
+                      "  Exemple RET: ample 800 + altura 150 -> 800x150 (NO 800x500). Tria l'altura mes coherent\n"
+                      "  del seu sistema; son mesures reals, no les marquis '(a confirmar)' ni les inventis.\n")
     txt = ("Dades llegides del plano:\n- Capes de conductes: %s\n"
            "- Longitud de linies per sistema (indicador aproximat, NO metres reals): %s\n"
            "%s"
