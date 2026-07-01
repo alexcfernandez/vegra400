@@ -17,6 +17,32 @@ SCAFFOLD = ("grup;codi;descr;w1;h1;w2;h2;uts;unit;preu;peces\n"
             "# codis: rec, red, c90, c45, inj, des, tapa, tmalla, esp | treb=ma d'obra\n"
             "# 'peces' = nº de peces FISIQUES reals per al taller (x1/x2); buit = 1. Independent d'uts (= el que factura).\n")
 
+# paraules genèriques que NO són el nom del projecte (per auto-omplir des del nom del fitxer)
+_GENERIC_NAMES = {
+    "planta", "plano", "planol", "planols", "axonometries", "axonometria", "axo",
+    "impulsio", "impulsion", "impulsi", "retorn", "retorno", "imp", "ret", "cond",
+    "conductes", "conducte", "conductos", "aire", "despiece", "dxf", "dwg", "pdf",
+    "rev", "final", "conductesaire", "invflux", "flux",
+}
+
+def _project_from_names(names):
+    """Millor endevinalla del nom d'obra a partir dels noms dels fitxers pujats.
+       Ex: 'PLANTA_ASSECADOR_IMPULSIO.pdf' -> 'Assecador'. Nomes es una ajuda editable."""
+    import re
+    from collections import Counter
+    toks = []
+    for n in names or []:
+        base = os.path.splitext(os.path.basename(n))[0]
+        for part in re.split(r"[^A-Za-zÀ-ÿ0-9]+", base):
+            p = part.strip()
+            if len(p) >= 4 and not p.isdigit() and p.lower() not in _GENERIC_NAMES:
+                toks.append(p)
+    if not toks:
+        return ""
+    c = Counter(t.upper() for t in toks)
+    best, _n = c.most_common(1)[0]
+    return best.capitalize()
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
@@ -84,6 +110,7 @@ def home():
 @app.route("/process", methods=["POST"])
 def process():
     cotas_set = set(); err = ""; csv_text = SCAFFOLD; imgs = []; analysis = {}; cotas = ""
+    names = []
     try:
         files = [f for f in request.files.getlist("plano") if f and f.filename]
         if not files:
@@ -91,6 +118,7 @@ def process():
         else:
             for f in files:
                 name = secure_filename(f.filename); path = os.path.join(UP, name); f.save(path)
+                names.append(f.filename)
                 low = name.lower()
                 if low.endswith(".pdf"):
                     try:
@@ -129,7 +157,8 @@ def process():
                 csv_text = SCAFFOLD
     except Exception:
         err = "Hi ha hagut un error processant els fitxers."
-    return render_template_string(REVIEW, cotas=cotas, csv=csv_text, err=err, project="", client="")
+    return render_template_string(REVIEW, cotas=cotas, csv=csv_text, err=err,
+                                  project=_project_from_names(names), client="")
 
 def _pdf_to_pngs(path, tag="p", max_pages=4):
     """Render de cada pàgina: la pàgina sencera (per la topologia) MÉS 4 quadrants a
